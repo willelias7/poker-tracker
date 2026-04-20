@@ -272,20 +272,100 @@ function renderAlltimeChart() {
   if (chartAlltime) { chartAlltime.destroy(); chartAlltime = null; }
   const canvas = document.getElementById('chart-alltime');
 
-  // Always start from the baseline — chart renders even with zero tracked sessions
-  let running  = ALLTIME_BASELINE;
-  const labels = ['Apr 20'];
-  const data   = [ALLTIME_BASELINE];
+  // ── Pre-tracking: linear 0 → $5,596 over 24 months (Apr 2024 → Apr 2026) ──
+  const PRE_MONTHS = 24;
+  const preLabels  = [];
+  const preData    = [];
+  for (let i = 0; i <= PRE_MONTHS; i++) {
+    const d = new Date(2024, 3 + i, 1); // April 2024 + i months
+    preLabels.push(d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }));
+    preData.push(Math.round(ALLTIME_BASELINE * (i / PRE_MONTHS)));
+  }
 
+  // ── Tracked sessions: start at baseline, build from Apr 20 2026 ──
+  let running      = ALLTIME_BASELINE;
+  const trackData  = [ALLTIME_BASELINE]; // overlap point with pre-tracking end
+  const trackDates = ["Apr '26"];
   sessions.forEach(s => {
     running += netOf(s);
-    labels.push(fmtDateShort(s.date));
-    data.push(running);
+    trackDates.push(fmtDateShort(s.date));
+    trackData.push(running);
   });
 
-  chartAlltime = new Chart(canvas, chartConfig({
-    labels, data, color: '#e8001a', fill: 'rgba(232,0,26,0.08)', label: 'All-Time P&L',
-  }));
+  // Combined x-axis: monthly pre-tracking labels, then individual session dates
+  // The overlap point (Apr '26 / index 24) is shared by both datasets
+  const allLabels   = [...preLabels, ...trackDates.slice(1)];
+  const preDataset  = [...preData,   ...Array(trackDates.length - 1).fill(null)];
+  const trackDataset= [...Array(PRE_MONTHS).fill(null), ...trackData];
+
+  chartAlltime = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: allLabels,
+      datasets: [
+        {
+          label: 'Pre-Tracking (est.)',
+          data: preDataset,
+          borderColor: 'rgba(232,0,26,0.3)',
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          borderDash: [6, 4],
+          fill: false,
+          tension: 0,
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          spanGaps: false,
+        },
+        {
+          label: 'All-Time P&L',
+          data: trackDataset,
+          borderColor: '#e8001a',
+          backgroundColor: 'rgba(232,0,26,0.08)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.35,
+          pointRadius: trackData.length > 40 ? 0 : 4,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#e8001a',
+          pointBorderColor: 'transparent',
+          spanGaps: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e2333',
+          borderColor: '#252a3a',
+          borderWidth: 1,
+          titleColor: '#94a3b8',
+          bodyColor: '#f1f5f9',
+          padding: 10,
+          filter: item => item.parsed.y !== null,
+          callbacks: {
+            label: ctx => `  ${ctx.dataset.label}: ${fmtMoney(ctx.parsed.y)}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { color: '#1e2333' },
+          ticks: { color: '#475569', maxTicksLimit: 10, font: { size: 11 } },
+          border: { color: '#1e2333' },
+        },
+        y: {
+          grid: { color: '#1e2333' },
+          ticks: { color: '#475569', font: { size: 11 }, callback: v => fmtMoney(v) },
+          border: { color: '#1e2333' },
+        },
+      },
+    },
+  });
 }
 
 function renderSummerChart() {
