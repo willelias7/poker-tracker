@@ -687,7 +687,12 @@ function sessionsForDate(d)    { return sessions.filter(s => s.date === d); }
 function summerSessions()      { return sessions.filter(s => { const d = new Date(s.date + 'T00:00:00'); return d >= SUMMER_START && d <= SUMMER_END; }); }
 function fmtDate(d)            { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function fmtDateShort(dateStr) { return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
-function fmtMoney(n)           { const abs = Math.abs(n); const s = '$' + (abs % 1 === 0 ? abs.toLocaleString() : abs.toFixed(2)); return n < 0 ? '-' + s : s; }
+function fmtMoney(n) {
+  if (n == null || isNaN(n)) return '$0';
+  const abs = Math.abs(n);
+  const s   = '$' + (Number.isInteger(abs) ? abs.toLocaleString('en-US') : abs.toFixed(2));
+  return n < 0 ? '-' + s : s;
+}
 function escHtml(s)            { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function statCard(label, value, cls = '') {
   return `<div class="stat-card"><div class="stat-label">${label}</div><div class="stat-value ${cls}">${value}</div></div>`;
