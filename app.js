@@ -272,14 +272,9 @@ function renderAlltimeChart() {
   if (chartAlltime) { chartAlltime.destroy(); chartAlltime = null; }
   const canvas = document.getElementById('chart-alltime');
 
-  if (sessions.length === 0) {
-    canvas.closest('.chart-wrap').innerHTML =
-      `<div class="empty-chart">No sessions yet — baseline: ${fmtMoney(ALLTIME_BASELINE)}</div>`;
-    return;
-  }
-
+  // Always start from the baseline — chart renders even with zero tracked sessions
   let running  = ALLTIME_BASELINE;
-  const labels = ['Start'];
+  const labels = ['Apr 20'];
   const data   = [ALLTIME_BASELINE];
 
   sessions.forEach(s => {
