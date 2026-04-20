@@ -1,7 +1,7 @@
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const SUMMER_START     = new Date('2026-04-20T00:00:00');
 const SUMMER_END       = new Date(new Date().getFullYear(), 7, 31, 23, 59, 59); // Aug 31
-const ALLTIME_BASELINE = 6154;
+const ALLTIME_BASELINE = 5596;
 const STORAGE_KEY      = 'poker-sessions';
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
