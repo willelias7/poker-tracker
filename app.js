@@ -368,13 +368,37 @@ function renderAlltimeChart() {
   });
 }
 
+function getCanvas(canvasId, wrapId) {
+  const wrap = document.getElementById(wrapId);
+  let canvas = document.getElementById(canvasId);
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = canvasId;
+    wrap.innerHTML = '';
+    wrap.appendChild(canvas);
+  }
+  wrap.querySelector('.empty-chart')?.remove();
+  canvas.style.display = '';
+  return canvas;
+}
+
+function showEmpty(wrapId, message) {
+  const wrap = document.getElementById(wrapId);
+  const canvas = wrap.querySelector('canvas');
+  if (canvas) canvas.style.display = 'none';
+  const msg = document.createElement('div');
+  msg.className = 'empty-chart';
+  msg.textContent = message;
+  wrap.appendChild(msg);
+}
+
 function renderSummerChart() {
   if (chartSummer) { chartSummer.destroy(); chartSummer = null; }
-  const canvas = document.getElementById('chart-summer');
+  const canvas = getCanvas('chart-summer', 'wrap-summer');
   const ss = summerSessions();
 
   if (ss.length === 0) {
-    canvas.closest('.chart-wrap').innerHTML = '<div class="empty-chart">No sessions tracked yet</div>';
+    showEmpty('wrap-summer', 'No sessions tracked yet');
     return;
   }
 
@@ -395,11 +419,11 @@ function renderSummerChart() {
 
 function renderHourlyChart() {
   if (chartHourly) { chartHourly.destroy(); chartHourly = null; }
-  const canvas = document.getElementById('chart-hourly');
+  const canvas = getCanvas('chart-hourly', 'wrap-hourly');
   const ss = summerSessions();
 
   if (ss.length === 0) {
-    canvas.closest('.chart-wrap').innerHTML = '<div class="empty-chart">No sessions tracked yet</div>';
+    showEmpty('wrap-hourly', 'No sessions tracked yet');
     return;
   }
 
