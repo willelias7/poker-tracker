@@ -59,8 +59,63 @@ document.addEventListener('DOMContentLoaded', () => {
   bindNav();
   bindCalendarNav();
   bindModal();
+  bindBackup();
   renderCalendar();
 });
+
+// ── BACKUP ───────────────────────────────────────────────────────────────────
+function bindBackup() {
+  document.getElementById('btn-export').addEventListener('click', exportSessions);
+  document.getElementById('btn-import').addEventListener('change', importSessions);
+}
+
+function exportSessions() {
+  const json = JSON.stringify(sessions, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const date = fmtDate(new Date()).replace(/-/g, '');
+  a.href     = url;
+  a.download = `poker-sessions-${date}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importSessions(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = evt => {
+    try {
+      const imported = JSON.parse(evt.target.result);
+      if (!Array.isArray(imported)) throw new Error('Invalid format');
+
+      const existingIds = new Set(sessions.map(s => s.id));
+      const newSessions = imported.filter(s => s.id && s.date && !existingIds.has(s.id));
+      const dupes       = imported.length - newSessions.length;
+
+      if (imported.length === 0) { alert('File contains no sessions.'); return; }
+
+      const msg = newSessions.length > 0
+        ? `Import ${newSessions.length} session(s)${dupes > 0 ? ` (${dupes} duplicate(s) skipped)` : ''}?`
+        : `Nothing to import — all ${dupes} session(s) already exist.`;
+
+      if (newSessions.length === 0) { alert(msg); return; }
+      if (!confirm(msg)) return;
+
+      sessions = [...sessions, ...newSessions].sort((a, b) => a.date.localeCompare(b.date));
+      persist();
+      renderCalendar();
+      if (currentPage === 'graphs') renderGraphsPage();
+    } catch {
+      alert('Could not read file. Make sure it\'s a valid poker-sessions export.');
+    }
+    // reset input so the same file can be re-imported if needed
+    e.target.value = '';
+  };
+  reader.readAsText(file);
+}
 
 // ── NAV ───────────────────────────────────────────────────────────────────────
 function bindNav() {
