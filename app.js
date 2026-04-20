@@ -1,7 +1,7 @@
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const SUMMER_START     = new Date('2026-04-20T00:00:00');
 const SUMMER_END       = new Date(new Date().getFullYear(), 7, 31, 23, 59, 59); // Aug 31
-const ALLTIME_BASELINE = 5596;
+const ALLTIME_BASELINE = 6154;
 const STORAGE_KEY      = 'poker-sessions';
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
@@ -687,7 +687,7 @@ function sessionsForDate(d)    { return sessions.filter(s => s.date === d); }
 function summerSessions()      { return sessions.filter(s => { const d = new Date(s.date + 'T00:00:00'); return d >= SUMMER_START && d <= SUMMER_END; }); }
 function fmtDate(d)            { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function fmtDateShort(dateStr) { return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
-function fmtMoney(n)           { const s = '$' + Math.abs(n % 1 === 0 ? Math.abs(n).toLocaleString() : Math.abs(n).toFixed(2)); return n < 0 ? '-' + s : s; }
+function fmtMoney(n)           { const abs = Math.abs(n); const s = '$' + (abs % 1 === 0 ? abs.toLocaleString() : abs.toFixed(2)); return n < 0 ? '-' + s : s; }
 function escHtml(s)            { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function statCard(label, value, cls = '') {
   return `<div class="stat-card"><div class="stat-label">${label}</div><div class="stat-value ${cls}">${value}</div></div>`;
