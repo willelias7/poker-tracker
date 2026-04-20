@@ -1,73 +1,74 @@
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-// Summer = today through end of August of the current year
-const SUMMER_START  = new Date('2026-04-20T00:00:00'); // start of tracking period
-const SUMMER_END    = new Date(new Date().getFullYear(), 7, 31, 23, 59, 59); // Aug 31
-// All-time profit earned before this app was started
+const SUMMER_START     = new Date('2026-04-20T00:00:00');
+const SUMMER_END       = new Date(new Date().getFullYear(), 7, 31, 23, 59, 59); // Aug 31
 const ALLTIME_BASELINE = 5596;
+const STORAGE_KEY      = 'poker-sessions';
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let sessions    = [];
 let currentPage = 'calendar';
 let calYear     = new Date().getFullYear();
 let calMonth    = new Date().getMonth();
-let editingId   = null;   // session id being edited, or null for new
-let modalDate   = null;   // date string 'YYYY-MM-DD' the modal was opened for
+let editingId   = null;
+let modalDate   = null;
 
-// Chart instances (kept so we can destroy+recreate on data change)
 let chartAlltime = null;
 let chartSummer  = null;
 let chartHourly  = null;
 
+// ── STORAGE ───────────────────────────────────────────────────────────────────
+function loadSessions() {
+  sessions = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  sessions.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function persist() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+}
+
+function createSession(body) {
+  const session = { id: generateId(), createdAt: new Date().toISOString(), ...body };
+  sessions.push(session);
+  sessions.sort((a, b) => a.date.localeCompare(b.date));
+  persist();
+  return session;
+}
+
+function updateSession(id, body) {
+  const idx = sessions.findIndex(s => s.id === id);
+  if (idx === -1) return null;
+  sessions[idx] = { ...sessions[idx], ...body };
+  persist();
+  return sessions[idx];
+}
+
+function deleteSession(id) {
+  sessions = sessions.filter(s => s.id !== id);
+  persist();
+}
+
+function generateId() {
+  return crypto.randomUUID
+    ? crypto.randomUUID()
+    : Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', async () => {
-  await loadSessions();
+document.addEventListener('DOMContentLoaded', () => {
+  loadSessions();
   bindNav();
   bindCalendarNav();
   bindModal();
   renderCalendar();
 });
 
-// ── API ───────────────────────────────────────────────────────────────────────
-async function loadSessions() {
-  const res = await fetch('/api/sessions');
-  sessions  = await res.json();
-  sessions.sort((a, b) => a.date.localeCompare(b.date));
-}
-
-async function apiPost(body) {
-  const res = await fetch('/api/sessions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return res.json();
-}
-
-async function apiPut(id, body) {
-  const res = await fetch(`/api/sessions/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return res.json();
-}
-
-async function apiDelete(id) {
-  await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
-}
-
 // ── NAV ───────────────────────────────────────────────────────────────────────
 function bindNav() {
   document.querySelectorAll('.nav-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      const page = tab.dataset.page;
-      switchPage(page);
-    });
+    tab.addEventListener('click', () => switchPage(tab.dataset.page));
   });
-
   document.getElementById('btn-add-session').addEventListener('click', () => {
-    const today = fmtDate(new Date());
-    openModalNew(today);
+    openModalNew(fmtDate(new Date()));
   });
 }
 
@@ -75,21 +76,17 @@ function switchPage(page) {
   currentPage = page;
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
-  if (page === 'graphs') {
-    renderGraphsPage();
-  }
+  if (page === 'graphs') renderGraphsPage();
 }
 
 // ── CALENDAR ──────────────────────────────────────────────────────────────────
 function bindCalendarNav() {
   document.getElementById('prev-month').addEventListener('click', () => {
-    calMonth--;
-    if (calMonth < 0) { calMonth = 11; calYear--; }
+    calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; }
     renderCalendar();
   });
   document.getElementById('next-month').addEventListener('click', () => {
-    calMonth++;
-    if (calMonth > 11) { calMonth = 0; calYear++; }
+    calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; }
     renderCalendar();
   });
 }
@@ -97,36 +94,28 @@ function bindCalendarNav() {
 function renderCalendar() {
   renderCalendarStats();
 
-  const title = document.getElementById('month-title');
-  title.textContent = new Date(calYear, calMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  document.getElementById('month-title').textContent =
+    new Date(calYear, calMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-  const grid   = document.getElementById('calendar-grid');
+  const grid = document.getElementById('calendar-grid');
   grid.innerHTML = '';
 
-  const firstDay = new Date(calYear, calMonth, 1).getDay();
+  const firstDay    = new Date(calYear, calMonth, 1).getDay();
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
   const daysInPrev  = new Date(calYear, calMonth, 0).getDate();
-  const today = fmtDate(new Date());
+  const today       = fmtDate(new Date());
 
-  // leading cells from previous month
-  for (let i = 0; i < firstDay; i++) {
-    const d = daysInPrev - firstDay + 1 + i;
-    grid.appendChild(makeCell(null, d, false));
-  }
+  for (let i = 0; i < firstDay; i++)
+    grid.appendChild(makeCell(null, daysInPrev - firstDay + 1 + i, false));
 
-  // current month
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = fmtDate(new Date(calYear, calMonth, d));
-    const isToday = dateStr === today;
-    grid.appendChild(makeCell(dateStr, d, true, isToday));
+    grid.appendChild(makeCell(dateStr, d, true, dateStr === today));
   }
 
-  // trailing cells
-  const total = firstDay + daysInMonth;
-  const trail = total % 7 === 0 ? 0 : 7 - (total % 7);
-  for (let i = 1; i <= trail; i++) {
+  const trail = (firstDay + daysInMonth) % 7;
+  for (let i = 1; i <= (trail === 0 ? 0 : 7 - trail); i++)
     grid.appendChild(makeCell(null, i, false));
-  }
 }
 
 function makeCell(dateStr, dayNum, isCurrentMonth, isToday = false) {
@@ -145,7 +134,6 @@ function makeCell(dateStr, dayNum, isCurrentMonth, isToday = false) {
     if (daySessions.length > 0) {
       const net   = daySessions.reduce((s, x) => s + netOf(x), 0);
       const hours = daySessions.reduce((s, x) => s + x.hours, 0);
-
       cell.classList.add(net >= 0 ? 'win' : 'loss');
 
       const netEl = document.createElement('div');
@@ -165,10 +153,8 @@ function makeCell(dateStr, dayNum, isCurrentMonth, isToday = false) {
         cell.appendChild(badge);
       }
     }
-
     cell.addEventListener('click', () => openModalForDay(dateStr));
   }
-
   return cell;
 }
 
@@ -177,7 +163,6 @@ function renderCalendarStats() {
     const d = new Date(s.date + 'T00:00:00');
     return d.getFullYear() === calYear && d.getMonth() === calMonth;
   });
-
   const net   = monthSessions.reduce((s, x) => s + netOf(x), 0);
   const hours = monthSessions.reduce((s, x) => s + x.hours, 0);
   const hr    = hours > 0 ? net / hours : 0;
@@ -185,11 +170,11 @@ function renderCalendarStats() {
   const wr    = monthSessions.length > 0 ? (wins / monthSessions.length * 100) : 0;
 
   document.getElementById('calendar-stats').innerHTML = `
-    ${statCard('Month P&L',    fmtMoney(net),           net > 0 ? 'positive' : net < 0 ? 'negative' : '')}
-    ${statCard('Hours Played', hours.toFixed(1) + ' h', '')}
-    ${statCard('Sessions',     monthSessions.length,    '')}
-    ${statCard('Hourly Rate',  fmtMoney(hr) + '/hr',    hr >= 0 ? 'gold' : 'negative')}
-    ${statCard('Win Rate',     wr.toFixed(0) + '%',      wr >= 50 ? 'positive' : wr > 0 ? '' : '')}
+    ${statCard('Month P&L',    fmtMoney(net),              net > 0 ? 'positive' : net < 0 ? 'negative' : '')}
+    ${statCard('Hours Played', hours.toFixed(1) + ' h',    '')}
+    ${statCard('Sessions',     monthSessions.length,        '')}
+    ${statCard('Hourly Rate',  fmtMoney(hr) + '/hr',        hr >= 0 ? 'gold' : 'negative')}
+    ${statCard('Win Rate',     wr.toFixed(0) + '%',          wr >= 50 ? 'positive' : '')}
   `;
 }
 
@@ -213,17 +198,16 @@ function renderGraphsStats() {
   const sumHr      = sumHours > 0 ? sumNet / sumHours : 0;
 
   document.getElementById('graphs-stats').innerHTML = `
-    ${statCard('All-Time P&L',    fmtMoney(allNet),    allNet  >= 0 ? 'positive' : 'negative')}
-    ${statCard('All-Time Hrs',    allHours.toFixed(1) + ' h', '')}
-    ${statCard('All-Time $/hr',   fmtMoney(allHr) + '/hr',    allHr  >= 0 ? 'gold' : 'negative')}
-    ${statCard('All-Time Win %',  allWR.toFixed(0) + '%',     allWR  >= 50 ? 'positive' : '')}
-    ${statCard('Summer P&L',      fmtMoney(sumNet),    sumNet  >= 0 ? 'positive' : 'negative')}
-    ${statCard('Summer $/hr',     fmtMoney(sumHr) + '/hr',    sumHr  >= 0 ? 'gold' : 'negative')}
+    ${statCard('All-Time P&L',   fmtMoney(allNet),           allNet >= 0 ? 'positive' : 'negative')}
+    ${statCard('All-Time Hrs',   allHours.toFixed(1) + ' h', '')}
+    ${statCard('All-Time $/hr',  fmtMoney(allHr) + '/hr',    allHr  >= 0 ? 'gold' : 'negative')}
+    ${statCard('All-Time Win %', allWR.toFixed(0) + '%',      allWR  >= 50 ? 'positive' : '')}
+    ${statCard('Summer P&L',     fmtMoney(sumNet),            sumNet >= 0 ? 'positive' : 'negative')}
+    ${statCard('Summer $/hr',    fmtMoney(sumHr) + '/hr',     sumHr  >= 0 ? 'gold' : 'negative')}
   `;
 }
 
 function renderCharts() {
-  const now = new Date();
   renderAlltimeChart();
   renderSummerChart();
   renderHourlyChart();
@@ -234,12 +218,12 @@ function renderAlltimeChart() {
   const canvas = document.getElementById('chart-alltime');
 
   if (sessions.length === 0) {
-    canvas.closest('.chart-wrap').innerHTML = '<div class="empty-chart">No sessions yet — baseline: ' + fmtMoney(ALLTIME_BASELINE) + '</div>';
+    canvas.closest('.chart-wrap').innerHTML =
+      `<div class="empty-chart">No sessions yet — baseline: ${fmtMoney(ALLTIME_BASELINE)}</div>`;
     return;
   }
 
-  // Start chart from all-time baseline
-  let running = ALLTIME_BASELINE;
+  let running  = ALLTIME_BASELINE;
   const labels = ['Start'];
   const data   = [ALLTIME_BASELINE];
 
@@ -250,24 +234,21 @@ function renderAlltimeChart() {
   });
 
   chartAlltime = new Chart(canvas, chartConfig({
-    labels, data,
-    color: '#e8001a',
-    fill: 'rgba(232,0,26,0.08)',
-    label: 'All-Time P&L',
+    labels, data, color: '#e8001a', fill: 'rgba(232,0,26,0.08)', label: 'All-Time P&L',
   }));
 }
 
 function renderSummerChart() {
   if (chartSummer) { chartSummer.destroy(); chartSummer = null; }
   const canvas = document.getElementById('chart-summer');
-
   const ss = summerSessions();
+
   if (ss.length === 0) {
     canvas.closest('.chart-wrap').innerHTML = '<div class="empty-chart">No sessions tracked yet</div>';
     return;
   }
 
-  let running = 0;
+  let running  = 0;
   const labels = [];
   const data   = [];
 
@@ -278,18 +259,15 @@ function renderSummerChart() {
   });
 
   chartSummer = new Chart(canvas, chartConfig({
-    labels, data,
-    color: '#22c55e',
-    fill: 'rgba(34,197,94,0.08)',
-    label: 'Summer P&L',
+    labels, data, color: '#22c55e', fill: 'rgba(34,197,94,0.08)', label: 'Summer P&L',
   }));
 }
 
 function renderHourlyChart() {
   if (chartHourly) { chartHourly.destroy(); chartHourly = null; }
   const canvas = document.getElementById('chart-hourly');
-
   const ss = summerSessions();
+
   if (ss.length === 0) {
     canvas.closest('.chart-wrap').innerHTML = '<div class="empty-chart">No sessions tracked yet</div>';
     return;
@@ -308,18 +286,11 @@ function renderHourlyChart() {
   });
 
   chartHourly = new Chart(canvas, chartConfig({
-    labels, data,
-    color: '#a78bfa',
-    fill: 'rgba(167,139,250,0.08)',
-    label: '$/hr',
-    zeroline: true,
+    labels, data, color: '#a78bfa', fill: 'rgba(167,139,250,0.08)', label: '$/hr', zeroline: true,
   }));
 }
 
 function chartConfig({ labels, data, color, fill, label, zeroline = false }) {
-  const positiveColor = color;
-  const negativeColor = '#ef4444';
-
   return {
     type: 'line',
     data: {
@@ -334,7 +305,7 @@ function chartConfig({ labels, data, color, fill, label, zeroline = false }) {
         tension: 0.35,
         pointRadius: data.length > 40 ? 0 : 4,
         pointHoverRadius: 6,
-        pointBackgroundColor: data.map(v => v >= 0 ? positiveColor : negativeColor),
+        pointBackgroundColor: data.map(v => v >= 0 ? color : '#ff3b3b'),
         pointBorderColor: 'transparent',
       }],
     },
@@ -368,16 +339,9 @@ function chartConfig({ labels, data, color, fill, label, zeroline = false }) {
         },
         y: {
           grid: {
-            color: ctx => {
-              if (zeroline && ctx.tick.value === 0) return '#475569';
-              return '#1e2333';
-            },
+            color: ctx => zeroline && ctx.tick.value === 0 ? '#475569' : '#1e2333',
           },
-          ticks: {
-            color: '#475569',
-            font: { size: 11 },
-            callback: v => fmtMoney(v),
-          },
+          ticks: { color: '#475569', font: { size: 11 }, callback: v => fmtMoney(v) },
           border: { color: '#1e2333' },
         },
       },
@@ -394,7 +358,6 @@ function bindModal() {
   document.getElementById('btn-cancel-form').addEventListener('click', () => {
     const daySess = modalDate ? sessionsForDate(modalDate) : [];
     if (daySess.length > 0 && editingId === null) {
-      // go back to sessions list
       showSessionsList(modalDate);
       showForm(false);
     } else {
@@ -402,35 +365,27 @@ function bindModal() {
     }
   });
 
-  // live net calculation
-  ['form-buyin', 'form-cashout'].forEach(id => {
-    document.getElementById(id).addEventListener('input', updateFormNet);
-  });
+  ['form-buyin', 'form-cashout'].forEach(id =>
+    document.getElementById(id).addEventListener('input', updateFormNet)
+  );
 
-  document.getElementById('session-form').addEventListener('submit', async e => {
+  document.getElementById('session-form').addEventListener('submit', e => {
     e.preventDefault();
-    await saveSession();
+    saveSession();
   });
 }
 
 function openModalForDay(dateStr) {
   modalDate = dateStr;
   editingId = null;
-  const daySess = sessionsForDate(dateStr);
-
   const label = new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
     weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
   });
   document.getElementById('modal-title').textContent = label;
 
-  if (daySess.length > 0) {
-    showSessionsList(dateStr);
-    showForm(false);
-  } else {
-    showSessionsList(null);
-    showForm(true);
-    resetForm(dateStr);
-  }
+  const daySess = sessionsForDate(dateStr);
+  if (daySess.length > 0) { showSessionsList(dateStr); showForm(false); }
+  else                     { showSessionsList(null);   showForm(true); resetForm(dateStr); }
 
   document.getElementById('modal-overlay').classList.remove('hidden');
 }
@@ -466,17 +421,10 @@ function closeModal() {
 
 function showSessionsList(dateStr) {
   const listEl = document.getElementById('sessions-list');
-  if (!dateStr) {
-    listEl.classList.add('hidden');
-    listEl.innerHTML = '';
-    return;
-  }
+  if (!dateStr) { listEl.classList.add('hidden'); listEl.innerHTML = ''; return; }
 
   const daySess = sessionsForDate(dateStr);
-  if (daySess.length === 0) {
-    listEl.classList.add('hidden');
-    return;
-  }
+  if (daySess.length === 0) { listEl.classList.add('hidden'); return; }
 
   let html = '';
   daySess.forEach(s => {
@@ -492,17 +440,13 @@ function showSessionsList(dateStr) {
           <button class="btn-icon" onclick="openModalEdit(sessions.find(x=>x.id==='${s.id}'))">Edit</button>
           <button class="btn-icon danger" onclick="confirmDelete('${s.id}')">Del</button>
         </div>
-      </div>
-    `;
+      </div>`;
   });
-
   html += `<button class="btn-add-another" onclick="addAnotherSession('${dateStr}')">+ Add another session</button>`;
 
   listEl.innerHTML = html;
   listEl.classList.remove('hidden');
 
-  // add divider before form if form is shown
-  const formWrap = document.getElementById('session-form-wrap');
   let divider = document.getElementById('modal-divider');
   if (!divider) {
     divider = document.createElement('hr');
@@ -512,15 +456,12 @@ function showSessionsList(dateStr) {
   }
 }
 
-function addAnotherSession(dateStr) {
-  showForm(true);
-  resetForm(dateStr);
-}
+function addAnotherSession(dateStr) { showForm(true); resetForm(dateStr); }
 
 function showForm(show) {
   document.getElementById('session-form-wrap').style.display = show ? '' : 'none';
-  const divider = document.getElementById('modal-divider');
-  if (divider) divider.style.display = show ? '' : 'none';
+  const d = document.getElementById('modal-divider');
+  if (d) d.style.display = show ? '' : 'none';
 }
 
 function resetForm(dateStr) {
@@ -554,16 +495,13 @@ function updateFormNet() {
   const el      = document.getElementById('form-net');
 
   if (!document.getElementById('form-buyin').value && !document.getElementById('form-cashout').value) {
-    el.textContent = 'Net: —';
-    el.className   = 'form-net';
-    return;
+    el.textContent = 'Net: —'; el.className = 'form-net'; return;
   }
-
   el.textContent = `Net: ${fmtMoney(net)}`;
   el.className   = `form-net ${net > 0 ? 'positive' : net < 0 ? 'negative' : ''}`;
 }
 
-async function saveSession() {
+function saveSession() {
   const id      = document.getElementById('form-id').value;
   const date    = document.getElementById('form-date').value;
   const buyIn   = parseFloat(document.getElementById('form-buyin').value);
@@ -571,83 +509,32 @@ async function saveSession() {
   const hours   = parseFloat(document.getElementById('form-hours').value);
   const venue   = document.getElementById('form-venue').value.trim();
   const notes   = document.getElementById('form-notes').value.trim();
+  const body    = { date, buyIn, cashOut, hours, venue, notes };
 
-  const body = { date, buyIn, cashOut, hours, venue, notes };
+  if (id) updateSession(id, body);
+  else    createSession(body);
 
-  const btn = document.getElementById('btn-save');
-  btn.disabled = true;
-  btn.textContent = 'Saving…';
-
-  if (id) {
-    const updated = await apiPut(id, body);
-    const idx = sessions.findIndex(s => s.id === id);
-    if (idx !== -1) sessions[idx] = updated;
-  } else {
-    const created = await apiPost(body);
-    sessions.push(created);
-    sessions.sort((a, b) => a.date.localeCompare(b.date));
-  }
-
-  btn.disabled = false;
   closeModal();
   renderCalendar();
   if (currentPage === 'graphs') renderGraphsPage();
 }
 
-async function confirmDelete(id) {
+function confirmDelete(id) {
   if (!confirm('Delete this session?')) return;
-  await apiDelete(id);
-  sessions = sessions.filter(s => s.id !== id);
+  deleteSession(id);
   closeModal();
   renderCalendar();
   if (currentPage === 'graphs') renderGraphsPage();
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
-function netOf(s) {
-  return (s.cashOut || 0) - (s.buyIn || 0);
-}
-
-function sessionsForDate(dateStr) {
-  return sessions.filter(s => s.date === dateStr);
-}
-
-function summerSessions() {
-  return sessions.filter(s => {
-    const d = new Date(s.date + 'T00:00:00');
-    return d >= SUMMER_START && d <= SUMMER_END;
-  });
-}
-
-function fmtDate(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function fmtDateShort(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function fmtMoney(n) {
-  const abs = Math.abs(n);
-  const str = abs % 1 === 0
-    ? '$' + abs.toLocaleString()
-    : '$' + abs.toFixed(2);
-  return n < 0 ? '-' + str : str;
-}
-
+function netOf(s)              { return (s.cashOut || 0) - (s.buyIn || 0); }
+function sessionsForDate(d)    { return sessions.filter(s => s.date === d); }
+function summerSessions()      { return sessions.filter(s => { const d = new Date(s.date + 'T00:00:00'); return d >= SUMMER_START && d <= SUMMER_END; }); }
+function fmtDate(d)            { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function fmtDateShort(dateStr) { return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+function fmtMoney(n)           { const s = '$' + Math.abs(n % 1 === 0 ? Math.abs(n).toLocaleString() : Math.abs(n).toFixed(2)); return n < 0 ? '-' + s : s; }
+function escHtml(s)            { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function statCard(label, value, cls = '') {
-  return `
-    <div class="stat-card">
-      <div class="stat-label">${label}</div>
-      <div class="stat-value ${cls}">${value}</div>
-    </div>
-  `;
-}
-
-function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return `<div class="stat-card"><div class="stat-label">${label}</div><div class="stat-value ${cls}">${value}</div></div>`;
 }
